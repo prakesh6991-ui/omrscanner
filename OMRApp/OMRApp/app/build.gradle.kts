@@ -12,7 +12,8 @@ android {
         minSdk = 24
         targetSdk = 34
         versionCode = 1
-        versionName = "0.1"
+        versionName = "0.2"
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
     buildFeatures { compose = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
@@ -26,5 +27,6 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
+    implementation("org.opencv:opencv:4.9.0")
     ksp("androidx.room:room-compiler:2.6.1")
 }

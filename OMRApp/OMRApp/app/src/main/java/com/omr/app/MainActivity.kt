@@ -26,7 +26,7 @@ import java.io.OutputStream
 
 // ---------- Database ----------
 @Entity data class Student(@PrimaryKey(autoGenerate = true) val id: Long = 0, val name: String, val rollNo: String)
-@Entity data class Exam(@PrimaryKey(autoGenerate = true) val id: Long = 0, val name: String, val questions: Int, val options: Int, val rollDigits: Int)
+@Entity data class Exam(@PrimaryKey(autoGenerate = true) val id: Long = 0, val name: String, val questions: Int, val options: Int, val rollDigits: Int, val answerKey: String = "", val marks: Double = 1.0, val negative: Double = 0.0)
 
 @Dao interface OmrDao {
     @Query("SELECT * FROM Student ORDER BY rollNo") fun students(): Flow<List<Student>>
@@ -34,15 +34,19 @@ import java.io.OutputStream
     @Query("DELETE FROM Student") suspend fun clearStudents()
     @Insert suspend fun addExam(e: Exam): Long
     @Query("SELECT * FROM Exam ORDER BY id DESC") fun exams(): Flow<List<Exam>>
+    @Query("UPDATE Exam SET answerKey=:k, marks=:m, negative=:n WHERE id=:id") suspend fun setKey(id: Long, k: String, m: Double, n: Double)
+    @Insert suspend fun addResult(r: ScanResult)
+    @Query("SELECT * FROM ScanResult WHERE examId=:id ORDER BY id DESC") fun results(id: Long): Flow<List<ScanResult>>
+    @Query("SELECT * FROM Student") suspend fun studentsNow(): List<Student>
 }
 
-@Database(entities = [Student::class, Exam::class], version = 1, exportSchema = false)
+@Database(entities = [Student::class, Exam::class, ScanResult::class], version = 2, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun dao(): OmrDao
     companion object {
         @Volatile private var inst: AppDb? = null
         fun get(c: Context): AppDb = inst ?: synchronized(this) {
-            inst ?: Room.databaseBuilder(c.applicationContext, AppDb::class.java, "omr.db").build().also { inst = it }
+            inst ?: Room.databaseBuilder(c.applicationContext, AppDb::class.java, "omr.db").fallbackToDestructiveMigration().build().also { inst = it }
         }
     }
 }
@@ -88,18 +92,29 @@ fun writeSheetPdf(e: Exam, out: OutputStream) {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        org.opencv.android.OpenCVLoader.initLocal()
         setContent { MaterialTheme { App() } }
     }
 }
 
 @Composable
 fun App() {
+    val ctx = LocalContext.current
+    val dao = remember { AppDb.get(ctx).dao() }
+    val exams by dao.exams().collectAsState(emptyList())
+    var sel by remember { mutableStateOf<Long?>(null) }
+    val exam = exams.find { it.id == sel } ?: exams.firstOrNull()
     var tab by remember { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        TabRow(selectedTabIndex = tab) {
-            listOf("Students", "Sheet Builder").forEachIndexed { i, t -> Tab(tab == i, { tab = i }, text = { Text(t) }) }
+        ScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp) {
+            listOf("Students", "Sheet Builder", "Answer Key", "Scan").forEachIndexed { i, t -> Tab(tab == i, { tab = i }, text = { Text(t) }) }
         }
-        if (tab == 0) StudentsScreen() else SheetScreen()
+        when (tab) {
+            0 -> StudentsScreen()
+            1 -> SheetScreen()
+            2 -> AnswerKeyScreen(exams, exam) { sel = it }
+            else -> ScanScreen(exams, exam) { sel = it }
+        }
     }
 }
 
